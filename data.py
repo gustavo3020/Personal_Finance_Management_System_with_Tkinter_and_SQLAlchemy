@@ -1,6 +1,5 @@
-import GUI
-from sqlalchemy import create_engine, Column, Float, VARCHAR, BIGINT, insert, \
-    text, desc, Date, MetaData, Table, update, inspect
+from sqlalchemy import create_engine, Column, insert, text, desc, MetaData, \
+    Table, update, inspect
 from sqlalchemy.orm import sessionmaker, declarative_base
 from pandas import read_sql, read_excel, ExcelWriter, to_datetime
 from datetime import datetime
@@ -161,12 +160,14 @@ def change_column_date_format(df):
     return df
 
 
-def export_to_excel():
+def get_table_names():
     inspector = inspect(engine)
     table_names = inspector.get_table_names()
-    file_path = GUI.filedialog.asksaveasfilename(
-        defaultextension='.xlsx', filetypes=[('Excel files', '*.xlsx'),
-                                             ('All files', '*.*')],)
+    return table_names
+
+
+def export_to_excel(file_path):
+    table_names = get_table_names()
     with ExcelWriter(file_path) as writer:
         for table_name in table_names:
             df = read_sql(table_name, con=engine)
@@ -175,6 +176,7 @@ def export_to_excel():
 
 def write_df_to_sql(df, table_name, excel_columns):
     new_df = change_column_date_format(df)
+    print(new_df)
     sql_column_type = get_column_type_list(table_name)
     for key, column in enumerate(sql_column_type):
         sql_column_type[key] = column_types[column]
@@ -183,29 +185,7 @@ def write_df_to_sql(df, table_name, excel_columns):
     new_df.to_sql(table_name, con=engine, if_exists='replace', index=False)
 
 
-def import_from_excel():
-    inspector = inspect(engine)
-    table_names = inspector.get_table_names()
-    file_path = GUI.filedialog.askopenfilename()
-    for table_name in table_names:
-        df = read_excel(file_path, sheet_name=table_name)
-        excel_columns = df.columns.tolist()
-        sql_columns = get_table_columns(table_name)
-        if excel_columns == sql_columns:
-            write_df_to_sql(df, table_name, excel_columns)
-        else:
-            count = 0
-            difference = {}
-            if len(sql_columns) > len(excel_columns):
-                GUI.show_msg_box(f'Faltam colunas na tabela {table_name}')
-            elif len(sql_columns) < len(excel_columns):
-                GUI.show_msg_box(f'Tabela {table_name} possui colunas a mais')
-            else:
-                for n in range(len(sql_columns)):
-                    if excel_columns[n] != sql_columns[n]:
-                        difference.update({excel_columns[n]: sql_columns[n]})
-                    count += 1
-                GUI.show_msg_box(f'Diferença nas colunas: {difference} da '
-                                 f'tabela {table_name}')
-        GUI.update_entry_tree(table_name)
-    GUI.update_abstract_tree()
+def export_table(file_path, table_name):
+    with ExcelWriter(file_path) as writer:
+        df = read_sql(table_name, con=engine)
+        df.to_excel(writer, sheet_name=table_name, index=False)

@@ -6,6 +6,7 @@ import data
 
 entry_box_list = []
 trees = {}
+abs_trees = {}
 selected_tab = ['']
 date_list = ['01/01/2020', '31/12/2030', '']
 
@@ -26,7 +27,8 @@ class Calendar():
     def getdate(self, n):
         self.date = self.calendar.get()
         date_list[n] = self.date
-        update_abstract_tree()
+        for tree_name in abs_trees:
+            update_abstract_tree(tree_name)
 
     def setdate(self, date):
         self.calendar.set_date(date)
@@ -56,10 +58,12 @@ def create_tab(**kwargs):
     return new_tab
 
 
-def create_frame(parent_frame):
+def create_frame(parent_frame, **kwargs):
+    anchor = kwargs.get('anchor', 'w')
+    side = kwargs.get('side', 'left')
     frame = Frame(parent_frame, highlightthickness=1)
     frame.configure(background='#f1f1f1')
-    frame.pack(anchor='w')
+    frame.pack(side=side, anchor=anchor)
     return frame
 
 
@@ -72,7 +76,7 @@ def create_button(**kwargs):
     button.pack(side='left', anchor='nw', padx=2, pady=2)
 
 
-def create_label(frame, **kwargs):
+def create_label_grid(frame, **kwargs):
     text = kwargs.get('text', 'Label')
     row = kwargs.get('row', 0)
     column = kwargs.get('column', 0)
@@ -82,13 +86,21 @@ def create_label(frame, **kwargs):
     label.grid(row=row, column=column)
 
 
+def create_label_pack(frame, **kwargs):
+    text = kwargs.get('text', 'Label')
+    background = kwargs.get('background', 'white')
+    label = Label(frame, text=text)
+    label.configure(background=background)
+    label.pack()
+
+
 def get_selected_tab(event):
     selected = event.widget.select()
     tab_text = event.widget.tab(selected, 'text')
     selected_tab[0] = tab_text
 
 
-def create_dropbox(frame):
+def create_optionmenu(frame):
     options = ['Opção 1', 'Opção 2', 'Opção 3']
     selected_option = StringVar(value='Selecione uma opção')
     drop = OptionMenu(frame, selected_option, *options, command=dropdown)
@@ -104,8 +116,8 @@ def create_entry_boxes(window, date):
     columns = data.get_table_columns(table_name)
     row = 0
     for entry_box_id in range(len(columns)-1):
-        create_label(window, text=columns[entry_box_id+1], row=row,
-                     background='#f1f1f1')
+        create_label_grid(window, text=columns[entry_box_id+1], row=row,
+                          background='#f1f1f1')
         if entry_box_id == 0:
             Calendar(window, date, number=3, row=row, column=1)
         else:
@@ -137,7 +149,7 @@ def create_window(title, button, command, date):
     tab2 = create_tab(notebook=notebook, tab_name='Avançado')
     window.bind('<Escape>', close_window)
     row = create_entry_boxes(tab1, date)
-    create_label(tab2, text='Parcelas', row=row, background='#f1f1f1')
+    create_label_grid(tab2, text='Parcelas', row=row, background='#f1f1f1')
     entry_box = Entry(tab2, width=30)
     entry_box.bind('<Return>', go_to_next_element)
     entry_box.grid(row=row, column=1)
@@ -228,22 +240,22 @@ def update_entry_tree(tree_name):
         pass
 
 
-def create_abstract_tree(frame, columns):
+def create_abstract_tree(frame, columns, tree_name):
+    create_label_pack(frame, text=tree_name, background='#f1f1f1')
     tree = create_tree(frame, columns)
     tree.column('#0', width=30, stretch='no')
     tree.column('#1', width=120, stretch='no')
     tree.column('#2', width=90, stretch='no')
-    trees.update({'Resumo': tree})
-    update_abstract_tree()
+    abs_trees.update({tree_name: tree})
+    update_abstract_tree(tree_name)
 
 
-def update_abstract_tree():
-    table_name = 'Lançamentos'
+def update_abstract_tree(table_name):
     column = 'Categoria'
     column2 = 'Subcategoria'
     start_date = date_list[0]
     end_date = date_list[1]
-    tree_object = trees['Resumo']
+    tree_object = abs_trees[table_name]
     tree_object.delete(*tree_object.get_children())
     df = data.read_sql(table_name, data.engine)
     df['Data'] = data.to_datetime(df['Data'])
@@ -287,7 +299,7 @@ def new_row():
         data.create_row(table_name=tree_name, values=new_entrys)
         new_entrys[0] += 1
         new_entrys[1] = data.add_month_to_date(new_entrys[1], 1)
-    update_abstract_tree()
+    update_abstract_tree(tree_name)
     update_entry_tree(tree_name)
 
 
@@ -310,7 +322,7 @@ def save_row(tree_name, tree_object, row_values, Id, date):
     validated_entry = data.validate_entrys(tree_name, entrys)
     new_entrys += validated_entry
     data.update_row_values(table_name=tree_name, values=new_entrys)
-    update_abstract_tree()
+    update_abstract_tree(tree_name)
     update_entry_tree(tree_name)
 
 
@@ -328,7 +340,7 @@ def delete_row(*args):
     for tree_row_id in selected_rows_id_tuple:
         database_id = tree_object.item(tree_row_id, 'values')[0]
         data.delete_row(Id=database_id, table_name=tree_name)
-    update_abstract_tree()
+    update_abstract_tree(tree_name)
     update_entry_tree(tree_name)
 
 
@@ -337,3 +349,49 @@ def import_image(path):
     resized_image = image.resize((30, 30))
     imagetk = ImageTk.PhotoImage(resized_image)
     return imagetk
+
+
+def export_to_excel():
+    path = filedialog.asksaveasfilename(defaultextension='.xlsx',
+                                        filetypes=[('Excel files', '*.xlsx'),
+                                                   ('All files', '*.*')],)
+    data.export_to_excel(path)
+
+
+def import_from_excel():
+    path = filedialog.askopenfilename()
+    data.import_from_excel(path)
+    for tree in abs_trees:
+        update_abstract_tree(tree)
+
+
+def export_table():
+    path = filedialog.asksaveasfilename(defaultextension='.xlsx',
+                                        filetypes=[('Excel files', '*.xlsx'),
+                                                   ('All files', '*.*')],)
+    data.export_table(path, *selected_tab)
+
+
+def import_table():
+    file_path = filedialog.askopenfilename()
+    table_name = selected_tab[0]
+    df = data.read_excel(file_path, sheet_name=table_name)
+    excel_columns = df.columns.tolist()
+    sql_columns = data.get_table_columns(table_name)
+    if excel_columns == sql_columns:
+        data.write_df_to_sql(df, table_name, excel_columns)
+    else:
+        count = 0
+        difference = {}
+        if len(sql_columns) > len(excel_columns):
+            show_msg_box(f'Faltam colunas na tabela {table_name}')
+        elif len(sql_columns) < len(excel_columns):
+            show_msg_box(f'Tabela {table_name} possui colunas a mais')
+        else:
+            for n in range(len(sql_columns)):
+                if excel_columns[n] != sql_columns[n]:
+                    difference.update({excel_columns[n]: sql_columns[n]})
+                count += 1
+            show_msg_box(f'Diferença nas colunas: {difference}')
+    update_entry_tree(table_name)
+    update_abstract_tree(table_name)
