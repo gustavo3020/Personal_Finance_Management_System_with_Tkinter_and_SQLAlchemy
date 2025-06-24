@@ -18,7 +18,6 @@ def create_database(path):
     Session = sessionmaker(bind=engine)
     session = Session()
     Base = declarative_base()
-    Base.metadata.create_all(bind=engine)
     return engine
 
 
@@ -35,8 +34,13 @@ def get_column_type_list(table_name):
     inspector = inspect(engine)
     columns = inspector.get_columns(table_name)
     for column in columns:
-        column_type = str((column['type']))
-        column_type_list.append(column_type)
+        if 'VARCHAR' in column:
+            column_type_list.append('VARCHAR')
+        elif 'INT' in column:
+            column_type_list.append('BIGINT')
+        else:
+            column_type = str((column['type']))
+            column_type_list.append(column_type)
     return column_type_list
 
 
@@ -63,13 +67,14 @@ def get_row_values(Id, table_name):
 
 
 def get_last_row_id(table_name):
-    table = metadata.tables[table_name]
-    try:
-        last_row = session.query(table).order_by(desc(table.c.Id)).first()
-        last_row_id = last_row[0]
-    except TypeError:
-        last_row_id = 0
-    return last_row_id
+    with Session() as session:
+        table = metadata.tables[table_name]
+        try:
+            last_row = session.query(table).order_by(desc(table.c.Id)).first()
+            last_row_id = last_row[0]
+        except TypeError:
+            last_row_id = 0
+        return last_row_id
 
 
 def get_table_columns(table_name):
@@ -151,8 +156,8 @@ def validate_entrys(table_name, entrys):
 
 def change_column_date_format(df):
     try:
-        for date_row_id, date in enumerate(df['Data']):
-            df.loc[date_row_id, 'Data'] = convert_string_to_date(date)
+        df['Data'] = to_datetime(df['Data'], format='%d/%m/%Y',
+                                 errors='coerce')
     except TypeError:
         df = df.astype('object')
         for date_row_id, date in enumerate(df['Data']):
@@ -176,7 +181,6 @@ def export_to_excel(file_path):
 
 def write_df_to_sql(df, table_name, excel_columns):
     new_df = change_column_date_format(df)
-    print(new_df)
     sql_column_type = get_column_type_list(table_name)
     for key, column in enumerate(sql_column_type):
         sql_column_type[key] = column_types[column]
