@@ -2,12 +2,12 @@
 Tired of complex spreadsheets for managing expenses, I developed this tool to simplify daily financial control and provide a clear overview of my financial health.
 
 Key Features:
-💰 Transaction Management: Easily add, edit, and delete financial entries.
-💳 Card Control: Dedicated section to track specific expenses from different cards.
-📊 Summary View: Overview dashboard with expense categorization by period.
-📅 Date Navigation: Interactive calendar for period selection.
-🗄️ Data Persistence: Secure data storage using SQLite and SQLAlchemy.
-📤 Excel Import/Export: Seamlessly move your data between the application and Excel spreadsheets.
+💰 Transaction Management: Easily add, edit, and delete financial entries;  
+💳 Card Control: Dedicated section to track specific expenses from different cards;  
+📊 Summary View: Overview dashboard with expense categorization by period;  
+📅 Date Navigation: Interactive calendar for period selection;  
+🗄️ Data Persistence: Secure data storage using SQLite and SQLAlchemy;  
+📤 Excel Import/Export: Seamlessly move your data between the application and Excel spreadsheets;  
 ⚙️ Modular Structure: Well-organized code in modules (GUI.py, data.py, Main.py) for easy maintenance and scalability.
 
 Visual demonstration:
@@ -19,16 +19,16 @@ Visual demonstration:
 ![Captura de tela 2025-06-23 223756](https://github.com/user-attachments/assets/1f65c06e-520a-4d07-a317-5449f9db8f62)
 ![Captura de tela 2025-06-23 223808](https://github.com/user-attachments/assets/c9a76ca3-346d-4bed-a3f7-ae28b150c712)
 
-🌱 Learnings and Next Steps
+🌱 Learnings and Next Steps  
 This project was fundamental in deepening my knowledge of:
 
-Object-Oriented Programming with Tkinter;
-Modularization and separation of concerns;
-Using SQLAlchemy Core for database interaction;
+Object-Oriented Programming with Tkinter;  
+Modularization and separation of concerns;  
+Using SQLAlchemy Core for database interaction;  
 Application state management (selected_tab);
 
 Next steps include implementing more advanced filters and reports, new features and explore another UI library.
 
-✉️ Contact
+✉️ Contact  
 Gustavo Aguiar - gustavo-luigi@hotmail.com - https://www.linkedin.com/in/gustavo-aguiar-a5803a191/
 
