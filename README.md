@@ -1,7 +1,7 @@
 # Personal_Finance_Management_System_with_Tkinter_and_SQLAlchemy
 Tired of complex spreadsheets for managing expenses, I developed this tool to simplify daily financial control and provide a clear overview of my financial health.
 
-Key Features:
+Key Features:  
 💰 Transaction Management: Easily add, edit, and delete financial entries;  
 💳 Card Control: Dedicated section to track specific expenses from different cards;  
 📊 Summary View: Overview dashboard with expense categorization by period;  
