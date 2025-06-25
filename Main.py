@@ -1,8 +1,7 @@
 import GUI
-from data import create_table_if_not_exists, create_database
+from data import DatabaseManager
+from utils import import_image
 from sqlalchemy import BIGINT, VARCHAR, Float, Date
-
-engine = create_database('sqlite:///database.db')
 
 table1 = 'Lançamentos'
 columns1 = {
@@ -14,10 +13,7 @@ columns1 = {
     'Subcategoria': VARCHAR,
     'Responsavel': VARCHAR,
     'Forma de pagamento': VARCHAR,
-    'Descrição': VARCHAR
-}
-
-create_table_if_not_exists(table1, columns1, engine)
+    'Descrição': VARCHAR}
 
 table2 = 'Cartões'
 columns2 = {
@@ -30,18 +26,22 @@ columns2 = {
     'Responsavel': VARCHAR,
     'Instituição': VARCHAR,
     'Mês fatura': VARCHAR,
-    'Descrição': VARCHAR
-}
+    'Descrição': VARCHAR}
 
-create_table_if_not_exists(table2, columns2, engine)
+dbmanager = DatabaseManager('sqlite:///database.db')
+dbmanager.create_table_if_not_exists(table1, columns1)
+dbmanager.create_table_if_not_exists(table2, columns2)
 
-root = GUI.create_main_window('Finanças')
+root = GUI.MainApp('Finanças', dbmanager)
 
-image_new = GUI.import_image('icons/novo.jpg')
-image_edit = GUI.import_image('icons/editar.jpg')
-image_delete = GUI.import_image('icons/lixo.jpg')
-image_import = GUI.import_image('icons/entrar.jpg')
-image_export = GUI.import_image('icons/saida.jpg')
+img_new = import_image('icons/novo.jpg')
+img_edit = import_image('icons/editar.jpg')
+img_delete = import_image('icons/lixo.jpg')
+img_import = import_image('icons/entrar.jpg')
+img_export = import_image('icons/saida.jpg')
+
+root.get_images(img_new=img_new, img_edit=img_edit, img_delete=img_delete,
+                img_import=img_import, img_export=img_export)
 
 notebook = GUI.Notebook(root)
 notebook.bind('<<NotebookTabChanged>>', lambda event:
@@ -56,17 +56,15 @@ frame1 = GUI.create_frame(tab0, side='top')
 frame2 = GUI.create_frame(tab1, side='top')
 frame3 = GUI.create_frame(tab2, side='top')
 
-GUI.create_common_buttons(frame=frame2, master=root, image_new=image_new,
-                          image_edit=image_edit, image_delete=image_delete,
-                          image_import=image_import, image_export=image_export)
-GUI.create_common_buttons(frame=frame3, master=root, image_new=image_new,
-                          image_edit=image_edit, image_delete=image_delete,
-                          image_import=image_import, image_export=image_export)
+root.create_common_buttons(frame2)
+root.create_common_buttons(frame3)
 
-GUI.EntryTreeview(tab1, 'Lançamentos')
-GUI.EntryTreeview(tab2, 'Cartões')
+GUI.EntryTreeview(tab1, 'Lançamentos', master=root)
+GUI.EntryTreeview(tab2, 'Cartões', master=root)
 
 columns = ['Categorias', 'Total']
-GUI.Options(columns=columns, upper_frame=frame0, lower_frame=frame1)
+columns_to_group = ['Categoria', 'Subcategoria']
+GUI.Options(columns=columns, upper_frame=frame0, lower_frame=frame1,
+            master=root, columns_to_group=columns_to_group)
 
 root.mainloop()
