@@ -1,45 +1,43 @@
-from tkinter import ttk, filedialog, Frame, Label, Tk, StringVar, OptionMenu, \
-    Toplevel, Entry, messagebox
+from tkinter import ttk, filedialog, Tk, StringVar, Toplevel, messagebox
 from tkcalendar import DateEntry
-from utils import go_to_next_element
-import data
+from utils import go_to_next_element, datetime, convert_date_to_string, \
+    add_month_to_date, prepare_line_chart_data, prepare_chart_data, \
+    prepare_data
+from data import read_sql
+from plotter import ChartPlotter
+from pandas import read_excel
 
 
-class Calendar():
-    def __init__(self, frame, date_str, **kwargs):
+class Calendar(DateEntry):
+    def __init__(self, frame, **kwargs):
+        super().__init__(frame)
         self.get_kwargs(**kwargs)
-        self.calendar = DateEntry(frame, background='darkgray',
-                                  date_pattern='dd/mm/yyyy', locale='pt_BR')
-        self.calendar.grid(row=self.row, column=self.column)
-        self.calendar.set_date(date_str)
-        self.date_obj = self.calendar.get_date()
-        self.calendar.bind('<<DateEntrySelected>>', lambda event:
-                           self.getdate())
+        self.configure(background='darkgray', date_pattern='dd/mm/yyyy',
+                       locale='pt_BR')
+        self.grid(row=self.row, column=self.column)
+        self.set_date(self.date_str)
+        self.date_obj = self.get_date()
+        self.bind('<<DateEntrySelected>>', lambda event: self.getdate())
 
     def get_kwargs(self, **kwargs):
         self.row = kwargs.get('row', 0)
         self.column = kwargs.get('column', 0)
         self.external_instance = kwargs.get('external_instance', None)
-        self.date_str = kwargs.get('date_str', data.datetime.today())
+        self.date_str = kwargs.get('date_str', None)
 
     def getdate(self):
-        self.date_obj = self.calendar.get_date()
+        self.date_obj = self.get_date()
         if self.external_instance:
-            self.external_instance.on_calendar_date_changed()
+            self.external_instance.on_param_changed()
 
 
-class Options():
+class DashboardManager():
     def __init__(self, **kwargs):
         self.get_kwargs(**kwargs)
-        options = list(self.master.entry_trees.keys())
-        self.selected_option = StringVar(value=options[0])
-        self.options = OptionMenu(self.lower_frame, self.selected_option,
-                                  *options, command=self.on_menu_selected)
-        self.options.pack()
-        self.tree = Treeview(self.lower_frame, columns=self.columns,
-                             master=self.master)
-        self.create_calendars(self.upper_frame)
-        self.on_menu_selected(selection=options[0])
+        self.create_calendars()
+        self.create_summary_display()
+        self.create_chart_display()
+        self.on_param_changed()
 
     def get_kwargs(self, **kwargs):
         self.master = kwargs.get('master', None)
@@ -48,72 +46,124 @@ class Options():
         self.columns = kwargs.get('columns', None)
         self.columns_to_group = kwargs.get('columns_to_group', None)
 
-    def create_calendars(self, upper_frame):
-        create_label(upper_frame, text='Data Inicial', background='#f1f1f1',
-                     geometry='grid', row=0)
-        self.calendar1 = Calendar(upper_frame, '01/01/2020', row=0, column=1,
-                                  external_instance=self)
-        create_label(upper_frame, text='Data Final', background='#f1f1f1',
-                     geometry='grid', row=1)
-        self.calendar2 = Calendar(upper_frame, '31/12/2030', row=1, column=1,
-                                  external_instance=self)
+    def create_calendars(self):
+        create_label(self.upper_frame, text='Data Inicial', geometry='grid',
+                     row=0)
+        self.calendar1 = Calendar(self.upper_frame, date_str='01/01/2020',
+                                  row=0, column=1, external_instance=self)
+        create_label(self.upper_frame, text='Data Final', geometry='grid',
+                     row=1)
+        self.calendar2 = Calendar(self.upper_frame, date_str='31/12/2030',
+                                  row=1, column=1, external_instance=self)
 
-    def on_calendar_date_changed(self):
-        self.on_menu_selected(self.selected_option.get())
+    def create_summary_display(self):
+        frame = create_frame(self.lower_frame)
+        options = list(self.master.entry_trees.keys())
+        self.selected_option = StringVar(value=options[0])
+        self.options = self.create_combobox('Tabelas', frame, options,
+                                            self.selected_option)
+        self.tree = SummaryTreeview(frame=frame, columns=self.columns,
+                                    master=self.master)
 
-    def on_menu_selected(self, selection):
+    def create_chart_display(self):
+        frame = ttk.Frame(self.lower_frame)
+        frame.pack(side='right', fill='both', expand=True, padx=10, pady=10)
+        chart_options = ['Pizza', 'Barras', 'Linhas']
+        self.selected_chart_type = StringVar(value=chart_options[0])
+        self.chart_menu = self.create_combobox('Tipo de gráfico', frame,
+                                               chart_options,
+                                               self.selected_chart_type)
+        self.chart_plotter = ChartPlotter(frame)
+
+    def create_combobox(self, text, frame, options, selected_option):
+        create_label(frame, text=text)
+        combobox = ttk.Combobox(frame, values=options, state='readonly',
+                                textvariable=selected_option)
+        combobox.bind("<<ComboboxSelected>>", self.on_param_changed)
+        combobox.pack(pady=5)
+        return combobox
+
+    def on_param_changed(self, event=None):
+        selected_table_name = self.selected_option.get()
         start_date = self.calendar1.date_obj
         end_date = self.calendar2.date_obj
-        self.tree.update(selection, start_date, end_date,
+        self.tree.update(selected_table_name, start_date, end_date,
                          self.columns_to_group)
+        self.update_chart(selected_table_name, start_date, end_date,
+                          self.columns_to_group,
+                          self.selected_chart_type.get())
+
+    def update_chart(self, table_name, start_date, end_date, group_by_columns,
+                     chart_type):
+        df = read_sql(table_name, self.master.dbmanager.engine)
+        filtered_df = prepare_data(df, start_date, end_date)
+        if filtered_df.empty:
+            self.chart_plotter.show_message(
+                "Nenhum dado para exibir no gráfico para a seleção atual.")
+            return
+        if chart_type == "Linhas":
+            line_chart_data = prepare_line_chart_data(filtered_df, start_date,
+                                                      end_date)
+            labels = line_chart_data['Periodo'].astype(str).tolist()
+            values = line_chart_data['Valor'].tolist()
+            title = 'Tendência de Valores ao Longo do Tempo'
+            self.chart_plotter.plot_line_chart(labels, values, title)
+        else:
+            group_column = group_by_columns[0]
+            chart_data = prepare_chart_data(filtered_df, group_column)
+            labels = chart_data[group_column].tolist()
+            values = chart_data['Valor'].tolist()
+            title = f'Distribuição por {group_column}'
+        if chart_type == "Pizza":
+            self.chart_plotter.plot_pie_chart(labels, values, title)
+        elif chart_type == "Barras":
+            self.chart_plotter.plot_bar_chart(labels, values, title)
 
 
-class Treeview():
+class SummaryTreeview(ttk.Treeview):
     def __init__(self, frame, **kwargs):
+        super().__init__(frame)
         self.get_kwargs(**kwargs)
-        self.tree = ttk.Treeview(frame, height=30, columns=self.columns)
-        self.y_scroll = self.create_y_scroll(frame)
-        self.x_scroll = self.create_x_scroll(frame)
-        self.tree.config(yscrollcommand=self.y_scroll.set,
-                         xscrollcommand=self.x_scroll.set)
-        self.tree_heading(self.columns)
-        self.tree.pack(side='left',  fill='both', expand=True)
+        self.configure_tree(frame)
         self.configure_columns()
 
     def get_kwargs(self, **kwargs):
-        self.columns = kwargs.get('columns', None)
         self.master = kwargs.get('master', None)
+        self.columns = kwargs.get('columns', None)
+        self.height = kwargs.get('height', 30)
 
-    def tree_heading(self, columns):
-        for column in columns:
-            self.tree.heading(column, text=column, anchor='w')
+    def configure_tree(self, frame):
+        self.y_scroll = self.create_y_scroll(frame)
+        self.x_scroll = self.create_x_scroll(frame)
+        self.configure(yscrollcommand=self.y_scroll.set, columns=self.columns,
+                       xscrollcommand=self.x_scroll.set, height=self.height)
+        self.pack(side='left',  fill='both', expand=True)
 
     def configure_columns(self):
-        self.tree.column('#0', width=50, stretch='no')
-        self.tree.column('#1', width=180, stretch='no')
-        self.tree.column('#2', width=120, stretch='no')
+        for column in self.columns:
+            self.heading(column, text=column, anchor='w')
+        self.column('#0', width=30, stretch='no')
+        self.column('#1', width=180, stretch='no')
+        self.column('#2', width=120, stretch='no')
 
     def create_y_scroll(self, frame):
-        self.treescroll = ttk.Scrollbar(frame, orient='vertical')
-        self.treescroll.config(command=self.tree.yview)
-        self.treescroll.pack(side='right', fill='y')
-        return self.treescroll
+        treescroll = ttk.Scrollbar(frame, orient='vertical')
+        treescroll.config(command=self.yview)
+        treescroll.pack(side='right', fill='y')
+        return treescroll
 
     def create_x_scroll(self, frame):
-        self.treescroll = ttk.Scrollbar(frame, orient='horizontal')
-        self.treescroll.config(command=self.tree.xview)
-        self.treescroll.pack(side='bottom', fill='x')
-        return self.treescroll
+        treescroll = ttk.Scrollbar(frame, orient='horizontal')
+        treescroll.config(command=self.xview)
+        treescroll.pack(side='bottom', fill='x')
+        return treescroll
 
     def update(self, table_name, start_date, end_date, group_by_columns):
-        self.tree.delete(*self.tree.get_children())
+        self.delete(*self.get_children())
         if not group_by_columns:
             return
-        df = data.read_sql(table_name, self.master.dbmanager.engine)
-        df = df.fillna('')
-        df['Valor'] = df['Valor'].replace('', 0).astype(float)
-        filtered_df = df[(df['Data'].dt.date >= start_date) &
-                         (df['Data'].dt.date <= end_date)]
+        df = read_sql(table_name, self.master.dbmanager.engine)
+        filtered_df = prepare_data(df, start_date, end_date)
         grouped_data = filtered_df.groupby(group_by_columns)['Valor'].sum(
             ).reset_index()
         self.insert_into_treeview(grouped_data, group_by_columns)
@@ -122,10 +172,8 @@ class Treeview():
                              parent_item=''):
         if not columns_to_group:
             return
-
         current_column = columns_to_group[0]
         remaining_columns = columns_to_group[1:]
-
         if parent_item == '':
             unique_values = data_frame[current_column].unique()
         else:
@@ -134,7 +182,7 @@ class Treeview():
         for value in sorted(unique_values):
             subset_df = data_frame[data_frame[current_column] == value]
             total_for_value = subset_df['Valor'].sum()
-            item_id = self.tree.insert(parent_item, 'end', values=(
+            item_id = self.insert(parent_item, 'end', values=(
                 value, f'{total_for_value:.2f}'))
             if remaining_columns:
                 self.insert_into_treeview(subset_df,
@@ -159,7 +207,7 @@ class Window(Toplevel):
 
     def get_kwargs(self, **kwargs):
         self.master = kwargs.get('master', None)
-        self.date = kwargs.get('date', data.datetime.today())
+        self.date = kwargs.get('date', datetime.today())
         self.title_name = kwargs.get('title', None)
         self.button = kwargs.get('button', None)
         self.command = kwargs.get('command', None)
@@ -171,11 +219,11 @@ class Window(Toplevel):
         row = 0
         for entry_box_id in range(len(columns)-1):
             create_label(tab, text=columns[entry_box_id+1], row=row,
-                         background='#f1f1f1', geometry='grid')
+                         geometry='grid')
             if entry_box_id == 0:
                 pass
             else:
-                entry_box = Entry(tab, width=30)
+                entry_box = ttk.Entry(tab, width=30)
                 entry_box.bind('<Return>', go_to_next_element)
                 entry_box.grid(row=row, column=1)
                 self.entry_box_list.append(entry_box)
@@ -183,9 +231,8 @@ class Window(Toplevel):
         return row
 
     def create_tab2_widgets(self):
-        create_label(self.tab2, text='Parcelas', row=0, background='#f1f1f1',
-                     geometry='grid')
-        entry_box = Entry(self.tab2, width=30)
+        create_label(self.tab2, text='Parcelas', row=0, geometry='grid')
+        entry_box = ttk.Entry(self.tab2, width=30)
         entry_box.grid(row=0, column=1)
         self.entry_box_list.append(entry_box)
 
@@ -193,7 +240,8 @@ class Window(Toplevel):
         self.notebook = Notebook(self)
         self.tab1 = create_tab(notebook=self.notebook, tab_name='Entradas')
         self.tab2 = create_tab(notebook=self.notebook, tab_name='Avançado')
-        self.calendar = Calendar(self.tab1, self.date, row=0, column=1)
+        self.calendar = Calendar(self.tab1, date_str=self.date, row=0,
+                                 column=1)
 
     def config_window(self, title):
         self.title(title)
@@ -225,57 +273,50 @@ class Notebook(ttk.Notebook):
 
     def get_selected_tab(self):
         selected_tab_id = self.select()
-        self.selected_tab = self.tab(selected_tab_id, 'text')
         self.master.selected_tab = self.tab(selected_tab_id, 'text')
 
 
-class EntryTreeview():
-    def __init__(self, frame, table_name, **kwargs):
-        self.master = kwargs.get('master', None)
-        self.style()
-        self.table_name = table_name
-        self.columns = self.master.dbmanager.get_table_columns(table_name)
-        self.tree = ttk.Treeview(frame, height=30, columns=self.columns)
+class EntryTreeview(ttk.Treeview):
+    def __init__(self, frame, **kwargs):
+        super().__init__(frame)
+        self.get_kwargs(**kwargs)
+        self.columns = self.master.dbmanager.get_table_columns(self.table_name)
         self.configure_tree(frame)
         self.configure_columns()
-        self.master.entry_trees.update({table_name: self.tree})
-        self.master.update(table_name)
+        self.master.entry_trees.update({self.table_name: self})
+        self.master.update(self.table_name)
 
-    def style(self):
-        style = ttk.Style()
-        style.theme_use('default')
-        style.configure('Treeview', background='#f1f1f1',
-                        fieldbackground='#f1f1f1')
+    def get_kwargs(self, **kwargs):
+        self.master = kwargs.get('master', None)
+        self.table_name = kwargs.get('table_name', None)
+        self.height = kwargs.get('height', 30)
 
     def configure_tree(self, frame):
         self.y_scroll = self.create_y_scroll(frame)
         self.x_scroll = self.create_x_scroll(frame)
-        self.tree.config(yscrollcommand=self.y_scroll.set,
-                         xscrollcommand=self.x_scroll.set)
-        self.tree_heading(self.columns)
-        self.tree.pack(side='left',  fill='both', expand=True)
+        self.config(yscrollcommand=self.y_scroll.set, height=self.height,
+                    xscrollcommand=self.x_scroll.set, columns=self.columns)
+        self.pack(side='left',  fill='both', expand=True)
 
     def configure_columns(self):
-        self.tree.column('#0', width=0, stretch='no')
-        self.tree.column('#1', width=30, stretch='no')
+        for column in self.columns:
+            self.heading(column, text=column, anchor='w')
+        self.column('#0', width=0, stretch='no')
+        self.column('#1', width=30, stretch='no')
         for n in range(2, len(self.columns)):
-            self.tree.column(f'#{n}', width=150, stretch='no')
+            self.column(f'#{n}', width=150, stretch='no')
 
     def create_y_scroll(self, frame):
-        self.treescroll = ttk.Scrollbar(frame, orient='vertical')
-        self.treescroll.config(command=self.tree.yview)
-        self.treescroll.pack(side='right', fill='y')
-        return self.treescroll
+        treescroll = ttk.Scrollbar(frame, orient='vertical')
+        treescroll.config(command=self.yview)
+        treescroll.pack(side='right', fill='y')
+        return treescroll
 
     def create_x_scroll(self, frame):
-        self.treescroll = ttk.Scrollbar(frame, orient='horizontal')
-        self.treescroll.config(command=self.tree.xview)
-        self.treescroll.pack(side='bottom', fill='x')
-        return self.treescroll
-
-    def tree_heading(self, columns):
-        for column in columns:
-            self.tree.heading(column, text=column, anchor='w')
+        treescroll = ttk.Scrollbar(frame, orient='horizontal')
+        treescroll.config(command=self.xview)
+        treescroll.pack(side='bottom', fill='x')
+        return treescroll
 
 
 class MainApp(Tk):
@@ -285,12 +326,17 @@ class MainApp(Tk):
         self.config_window(title)
         self.entry_trees = {}
         self.selected_tab = ''
+        self.style()
 
     def config_window(self, title):
         self.title(title)
         self.state('zoomed')
         self.bind('<Delete>', self.delete_row)
         self.bind('<Double-Button-1>', lambda event: self.edit_row())
+
+    def style(self):
+        style = ttk.Style()
+        style.theme_use('vista')
 
     def get_images(self, **kwargs):
         self.img_new = kwargs.get('img_new', None)
@@ -331,7 +377,7 @@ class MainApp(Tk):
             new_entrys[3] = f'{n + 1} de {times}'
             self.dbmanager.create_row(table_name=tree_name, values=new_entrys)
             new_entrys[0] += 1
-            new_entrys[1] = data.add_month_to_date(new_entrys[1], 1)
+            new_entrys[1] = add_month_to_date(new_entrys[1], 1)
         self.update(tree_name)
 
     def edit_row(self):
@@ -369,11 +415,11 @@ class MainApp(Tk):
         self.update(tree_name)
 
     def update(self, tree_name):
-        df = data.read_sql(tree_name, self.dbmanager.engine)
+        df = read_sql(tree_name, self.dbmanager.engine)
         df = df.fillna('')
         for row_id, date_obj in enumerate(df['Data']):
             df = df.astype('object')
-            date_string = data.convert_date_to_string(date_obj.date())
+            date_string = convert_date_to_string(date_obj.date())
             df.loc[row_id, 'Data'] = date_string
         tree_object = self.entry_trees[tree_name]
         row_to_focus = tree_object.focus()
@@ -398,7 +444,7 @@ class MainApp(Tk):
     def import_table(self):
         file_path = filedialog.askopenfilename()
         table_name = self.selected_tab
-        df = data.read_excel(file_path, sheet_name=table_name)
+        df = read_excel(file_path, sheet_name=table_name)
         excel_columns = df.columns.tolist()
         sql_columns = self.dbmanager.get_table_columns(table_name)
         if excel_columns == sql_columns:
@@ -422,8 +468,7 @@ class MainApp(Tk):
 def create_tab(**kwargs):
     notebook = kwargs.get('notebook', None)
     tab_name = kwargs.get('tab_name', None)
-    new_tab = Frame(notebook, width=200, height=100)
-    new_tab.configure(background='#f1f1f1')
+    new_tab = ttk.Frame(notebook, width=200, height=100)
     notebook.add(new_tab, text=tab_name)
     return new_tab
 
@@ -431,8 +476,7 @@ def create_tab(**kwargs):
 def create_frame(parent_frame, **kwargs):
     anchor = kwargs.get('anchor', 'w')
     side = kwargs.get('side', 'left')
-    frame = Frame(parent_frame, highlightthickness=1)
-    frame.configure(background='#f1f1f1')
+    frame = ttk.Frame(parent_frame)
     frame.pack(side=side, anchor=anchor)
     return frame
 
@@ -458,9 +502,7 @@ def create_label(frame, **kwargs):
     row = kwargs.get('row', 0)
     column = kwargs.get('column', 0)
     geometry = kwargs.get('geometry', 'pack')
-    background = kwargs.get('background', 'white')
-    label = Label(frame, text=text)
-    label.configure(background=background)
+    label = ttk.Label(frame, text=text)
     if geometry == 'pack':
         label.pack()
     if geometry == 'grid':

@@ -1,8 +1,6 @@
 from sqlalchemy import create_engine, Column, insert, text, MetaData, Table, \
     update, inspect
-from pandas import read_sql, read_excel, ExcelWriter, to_datetime
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
+from pandas import read_sql, ExcelWriter, to_datetime
 
 column_types = {'VARCHAR': 'string', 'BIGINT': 'int64',
                 'DATE': 'datetime64[ns]', 'FLOAT': 'float64',
@@ -108,7 +106,7 @@ class DatabaseManager():
         return new_entrys
 
     def write_df_to_sql(self, df, table_name, excel_columns):
-        new_df = change_column_date_format(df)
+        new_df = self.change_column_date_format(df)
         sql_column_type = self.get_column_type_list(table_name)
         for key, column in enumerate(sql_column_type):
             sql_column_type[key] = column_types[column]
@@ -122,47 +120,26 @@ class DatabaseManager():
             df = read_sql(table_name, con=self.engine)
             df.to_excel(writer, sheet_name=table_name, index=False)
 
+    def change_column_date_format(self, df):
+        try:
+            df['Data'] = to_datetime(df['Data'], format='%d/%m/%Y',
+                                     errors='coerce')
+        except TypeError:
+            df = df.astype('object')
+            for date_row_id, date in enumerate(df['Data']):
+                df.loc[date_row_id, 'Data'] = date.date()
+        return df
 
-def add_month_to_date(date, months_to_add):
-    new_date = date + relativedelta(months=months_to_add)
-    return new_date
+    def export_to_excel(self, file_path):
+        with ExcelWriter(file_path) as writer:
+            for table_name in self.table_names:
+                df = read_sql(table_name, con=self.engine)
+                df.to_excel(writer, sheet_name=table_name, index=False)
 
+    def create_column(self, table_name, column, column_type):
+        stmt = f'ALTER TABLE {table_name} ADD COLUMN {column} {column_type}'
+        self.execute_text_stmt(stmt)
 
-def convert_string_to_date(date_string):
-    date_object = datetime.strptime(date_string, '%d/%m/%Y').date()
-    return date_object
-
-
-def convert_date_to_string(date):
-    date_object = datetime.strptime(str(date), '%Y-%m-%d')
-    string_date = date_object.strftime('%d/%m/%Y')
-    return string_date
-
-
-def change_column_date_format(df):
-    try:
-        df['Data'] = to_datetime(df['Data'], format='%d/%m/%Y',
-                                 errors='coerce')
-    except TypeError:
-        df = df.astype('object')
-        for date_row_id, date in enumerate(df['Data']):
-            df.loc[date_row_id, 'Data'] = date.date()
-    return df
-
-
-# def export_to_excel(file_path):
-#     table_names = get_table_names()
-#     with ExcelWriter(file_path) as writer:
-#         for table_name in table_names:
-#             df = read_sql(table_name, con=engine)
-#             df.to_excel(writer, sheet_name=table_name, index=False)
-
-
-# def create_column(table_name, column, type):
-#     stmt = f'ALTER TABLE {table_name} ADD COLUMN {column} {type}'
-#     execute_text_stmt(stmt)
-
-
-# def delete_column(table_name, column):
-#     stmt = f'ALTER TABLE {table_name} DROP {column} ;'
-#     execute_text_stmt(stmt)
+    def delete_column(self, table_name, column):
+        stmt = f'ALTER TABLE {table_name} DROP {column} ;'
+        self.execute_text_stmt(stmt)

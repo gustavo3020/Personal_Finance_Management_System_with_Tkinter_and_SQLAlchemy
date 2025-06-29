@@ -59,12 +59,12 @@ frame3 = GUI.create_frame(tab2, side='top')
 root.create_common_buttons(frame2)
 root.create_common_buttons(frame3)
 
-GUI.EntryTreeview(tab1, 'Lançamentos', master=root)
-GUI.EntryTreeview(tab2, 'Cartões', master=root)
+GUI.EntryTreeview(tab1, table_name='Lançamentos', master=root)
+GUI.EntryTreeview(tab2, table_name='Cartões', master=root)
 
 columns = ['Categorias', 'Total']
 columns_to_group = ['Categoria', 'Subcategoria']
-GUI.Options(columns=columns, upper_frame=frame0, lower_frame=frame1,
-            master=root, columns_to_group=columns_to_group)
+GUI.DashboardManager(columns=columns, upper_frame=frame0, lower_frame=frame1,
+                     master=root, columns_to_group=columns_to_group)
 
 root.mainloop()
